@@ -385,18 +385,50 @@ from contextlib import contextmanager
 
 @contextmanager
 def use_simple_names():
-    get_col_name = lambda el, *args, **kwargs: str(el.element.name)
+    get_lab_name = lambda el, *args, **kwargs: print(el.element.name) or str(el.element.name)
+    get_col_name = lambda el, *args, **kwargs: print(el.name) or str(el.name)
+    compiles(sql.compiler._CompileLabel)(get_lab_name)
+    compiles(sql.elements.ColumnClause)(get_col_name)
+    compiles(sql.schema.Column)(get_col_name)
     try:
-        yield compiles(sql.compiler._CompileLabel)(get_col_name)
+        yield 1
     except:
         pass
     finally:
         deregister(sql.compiler._CompileLabel)
 
+def _simplify_select(sel):
+    print("traversing")
+    if len(sel.froms) == 1:  
+        parent = sel.froms[0]
+
+        # technically should be an ordered set
+        crnt_cols = set(sel.inner_columns)
+        parent_cols = set(parent.columns)
+
+        print(parent_cols - crnt_cols)
+        if len(parent_cols - crnt_cols) == 0:
+            print("going STAR BABY")
+            remaining = list(crnt_cols - parent_cols)
+
+            sel._raw_columns = [sql.text("*"), *remaining]
+            #sel._froms = (sel.froms[0],)
+            sel._reset_memoizations()
+            print(repr(sel))
+            print(sel._raw_columns)
+            print(sel.froms)
+
+            #parent.named_with_column = False
+            #parent._reset_memoizations()
+    sel._reset_memoizations()
+
+        
+
 @show_query.register(LazyTbl)
 def _show_query(tbl, simplify = False):
-    query = tbl.last_op #if not simplify else 
-    compile_query = lambda: query.compile(
+    from sqlalchemy.sql.visitors import cloned_traverse
+
+    compile_query = lambda query: query.compile(
                 dialect = tbl.source.dialect,
                 compile_kwargs = {"literal_binds": True}
             )
@@ -404,11 +436,13 @@ def _show_query(tbl, simplify = False):
 
     if simplify:
         # try to strip table names and labels where uneccessary
+        simple_sel = cloned_traverse(tbl.last_op, {}, {"select": _simplify_select})
+    
         with use_simple_names():
-            print(compile_query())
+            print(compile_query(simple_sel))
     else:
         # use a much more verbose query
-        print(compile_query())
+        print(compile_query(tbl.last_op))
 
     return tbl
 
