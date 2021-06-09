@@ -427,7 +427,7 @@ def _collect(__data, as_df = True):
     #    compile_kwargs = {"literal_binds": True}
     #)
 
-    with __data.source.begin() as conn:
+    with __data.source.connect() as conn:
         if as_df:
             sql_db = _FixedSqlDatabase(conn)
 
