@@ -385,8 +385,8 @@ from contextlib import contextmanager
 
 @contextmanager
 def use_simple_names():
-    get_lab_name = lambda el, *args, **kwargs: print(el.element.name) or str(el.element.name)
-    get_col_name = lambda el, *args, **kwargs: print(el.name) or str(el.name)
+    get_lab_name = lambda el, *args, **kwargs: str(el.element.name)
+    get_col_name = lambda el, *args, **kwargs: str(el.name)
     compiles(sql.compiler._CompileLabel)(get_lab_name)
     compiles(sql.elements.ColumnClause)(get_col_name)
     compiles(sql.schema.Column)(get_col_name)
@@ -397,30 +397,48 @@ def use_simple_names():
     finally:
         deregister(sql.compiler._CompileLabel)
 
-def _simplify_select(sel):
-    print("traversing")
-    if len(sel.froms) == 1:  
-        parent = sel.froms[0]
+from sqlalchemy.sql.util import ClauseAdapter
 
-        # technically should be an ordered set
-        crnt_cols = set(sel.inner_columns)
-        parent_cols = set(parent.columns)
+class FromCloneAdapter(ClauseAdapter):
+    def replace(self, col):
+        if isinstance(col, sql.FromClause) and self.selectable._is_clone_of is col:
+            return self.selectable
 
-        print(parent_cols - crnt_cols)
-        if len(parent_cols - crnt_cols) == 0:
-            print("going STAR BABY")
-            remaining = list(crnt_cols - parent_cols)
+        return super().replace(col)
 
-            sel._raw_columns = [sql.text("*"), *remaining]
-            #sel._froms = (sel.froms[0],)
-            sel._reset_memoizations()
-            print(repr(sel))
-            print(sel._raw_columns)
-            print(sel.froms)
 
-            #parent.named_with_column = False
-            #parent._reset_memoizations()
-    sel._reset_memoizations()
+def _simplify_select(child):
+    # TODO: need parent, sel, child
+    # * grandparent is already star transformed
+    # * parent gets transformed
+    # * pre-transform cols are used w/ ClauseAdapter, to update child's from objects
+    #
+    # the issue is that when an outer query refers to an implicit, * variable,
+    # then there is no way to swap in the new parent. Because they don't have
+    # a matching column (it was replaced with *)
+    for sel in child.froms:
+        if isinstance(sel, (sql.Subquery, sql.Alias)):
+            sel = sel.element
+
+        if isinstance(sel, sql.Select) and len(sel.froms) == 1:
+            parent = sel.froms[0]
+
+            # technically should be an ordered set
+            crnt_cols = set(sel.inner_columns)
+            parent_cols = set(parent.columns)
+
+            if len(parent_cols - crnt_cols) == 0:
+                remaining = list(crnt_cols - parent_cols)
+
+                star = sql.text("*")
+                star._from_objects = (parent,)
+
+                sel._raw_columns = [star, *remaining]
+                sel._reset_memoizations()
+
+        sel._reset_memoizations()
+    child._reset_memoizations()
+
 
         
 
