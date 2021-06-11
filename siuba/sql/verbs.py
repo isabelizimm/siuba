@@ -408,16 +408,28 @@ class FromCloneAdapter(ClauseAdapter):
 
 
 def _simplify_select(child):
-    # TODO: need parent, sel, child
-    # * grandparent is already star transformed
-    # * parent gets transformed
-    # * pre-transform cols are used w/ ClauseAdapter, to update child's from objects
+    # This function transforms a query to use * for selection when possible.
+    # Due to the way children hold parent columns in sqlalchemy, it performs
+    # breadth-first transformation, with 3 levels of (sub)subqueries. (TODO: fix names)
+    # * grandparent (parent) is already star transformed
+    # * parent (sel) gets transformed
+    # * child: iterating over from clauses
+    # * pre-transform cols are used w/ ClauseAdapter, to update parent selects
     #
     # the issue is that when an outer query refers to an implicit, * variable,
     # then there is no way to swap in the new parent. Because they don't have
     # a matching column (it was replaced with *)
+    
+    # Workaround sqlalchemy < 1.4 not having Subquery class
+    CLS_SUBQUERY = getattr(sql, "Subquery", sql.Alias)
+
+    if hasattr(sql.Select, "_reset_memoizations"):
+        f_refresh = lambda obj: obj._reset_memoizations()
+    else:
+        f_refresh = lambda obj: obj._reset_exported()
+
     for sel in child.froms:
-        if isinstance(sel, (sql.Subquery, sql.Alias)):
+        if isinstance(sel, (CLS_SUBQUERY, sql.Alias)):
             sel = sel.element
 
         if isinstance(sel, sql.Select) and len(sel.froms) == 1:
@@ -434,16 +446,16 @@ def _simplify_select(child):
                 star._from_objects = (parent,)
 
                 sel._raw_columns = [star, *remaining]
-                sel._reset_memoizations()
+                f_refresh(sel)
 
-        sel._reset_memoizations()
-    child._reset_memoizations()
+        f_refresh(sel)
+    f_refresh(child)
 
 
         
 
 @show_query.register(LazyTbl)
-def _show_query(tbl, simplify = False):
+def _show_query(tbl, simplify = False, return_query = True):
     from sqlalchemy.sql.visitors import cloned_traverse
 
     compile_query = lambda query: query.compile(
@@ -457,10 +469,15 @@ def _show_query(tbl, simplify = False):
         simple_sel = cloned_traverse(tbl.last_op, {}, {"select": _simplify_select})
     
         with use_simple_names():
-            print(compile_query(simple_sel))
+            explained = compile_query(simple_sel)
     else:
         # use a much more verbose query
-        print(compile_query(tbl.last_op))
+        explained = compile_query(tbl.last_op)
+
+    if not return_query:
+        return explained
+    else:
+        print(explained)
 
     return tbl
 
