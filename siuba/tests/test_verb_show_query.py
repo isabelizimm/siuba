@@ -17,21 +17,21 @@ def df_tiny():
 def df_wide():
     return pg_backend.load_df(data_frame(x = [1,2], y = [3,4], z = [5, 6]))
 
-def rename_source(sql_backend, query):
-    query.replace(sql_backend.tbl.name, "SRC_TBL")
+def rename_source(query, tbl):
+    return query.replace(tbl.tbl.name, "SRC_TBL")
 
 
 def test_show_query_basic(df_tiny):
     q = df_tiny >> mutate(a = _.x.mean()) >> show_query(return_query = False)
 
-    assert replace_source(str(q)) == """\
+    assert rename_source(str(q), df_tiny) == """\
 SELECT SRC_TBL.x, avg(SRC_TBL.x) OVER () AS a 
 FROM SRC_TBL"""
 
 def test_show_query_basic_simplify(df_tiny):
     q = df_tiny >> mutate(a = _.x.mean()) >> show_query(return_query = False, simplify=True)
 
-    assert replace_source(str(q)) == """\
+    assert rename_source(str(q), df_tiny) == """\
 SELECT x, avg(x) OVER () AS a 
 FROM SRC_TBL"""
 
@@ -39,7 +39,7 @@ def test_show_query_complex_simplify(df_wide):
     q = df_wide >>  mutate(a = _.x.mean(), b = _.a.mean())
     res = q >> show_query(return_query = False, simplify=True)
 
-    assert replace_source(str(res)) == """\
+    assert rename_source(str(res), df_wide) == """\
 SELECT a, avg(a) OVER () AS b 
 FROM (SELECT *, avg(x) OVER () AS a 
 FROM SRC_TBL) AS anon_1"""
