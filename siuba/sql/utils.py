@@ -94,7 +94,7 @@ def _sql_refresh(el):
     f_refresh = getattr(
         el,
         "_reset_memoizations",
-        getattr(el, "_reset_exported")
+        getattr(el, "_reset_exported", None)
     )
 
     f_refresh()
