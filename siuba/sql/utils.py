@@ -88,3 +88,53 @@ def _sql_add_columns(select, columns):
         return select
 
     return select.add_columns(*columns)
+
+
+def _sql_refresh(el):
+    f_refresh = getattr(
+        el,
+        "_reset_memoizations",
+        getattr(el, "_reset_exported")
+    )
+
+    f_refresh()
+
+
+# Simplify option in show_query -----------------------------------------------
+
+def sql_simplify_select(select):
+    from sqlalchemy import sql
+    from sqlalchemy.sql.visitors import traverse, cloned_traverse
+
+    def simplify_sel(sel):
+
+        if isinstance(sel, sql.Select) and len(sel.froms) == 1:
+            child = sel.froms[0]
+
+            # technically should be an ordered set
+            crnt_cols = set(sel.inner_columns)
+            child_cols = set(child.columns)
+
+            if len(child_cols - crnt_cols) == 0:
+                remaining = list(crnt_cols - child_cols)
+
+                star = sql.text("*")
+                star._from_objects = (child,)
+
+                sel._raw_columns = [star, *remaining]
+                _sql_refresh(sel)
+
+    # TODO: find simpler way to clone an element. We cannot use the visitors
+    # argument of cloned_traverse, since it visits the inner-most element first.
+    clone_el = cloned_traverse(select, {}, {})
+
+    # modify in-place
+    traverse(clone_el, {}, {"select": simplify_sel})
+
+    return clone_el
+
+    
+
+
+    
+

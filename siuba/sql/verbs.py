@@ -18,7 +18,7 @@ from siuba.dply.verbs import (
         if_else
         )
 from .translate import sa_get_over_clauses, CustomOverClause, SqlColumn, SqlColumnAgg
-from .utils import get_dialect_funcs, get_sql_classes, _FixedSqlDatabase, _sql_select, _sql_column_collection, _sql_add_columns
+from .utils import get_dialect_funcs, get_sql_classes, _FixedSqlDatabase, _sql_select, _sql_column_collection, _sql_add_columns, sql_simplify_select
 
 from sqlalchemy import sql
 import sqlalchemy
@@ -456,7 +456,6 @@ def _simplify_select(child):
 
 @show_query.register(LazyTbl)
 def _show_query(tbl, simplify = False, return_query = True):
-    from sqlalchemy.sql.visitors import cloned_traverse
 
     compile_query = lambda query: query.compile(
                 dialect = tbl.source.dialect,
@@ -466,7 +465,7 @@ def _show_query(tbl, simplify = False, return_query = True):
 
     if simplify:
         # try to strip table names and labels where uneccessary
-        simple_sel = cloned_traverse(tbl.last_op, {}, {"select": _simplify_select})
+        simple_sel = sql_simplify_select(tbl.last_op)
     
         with use_simple_names():
             explained = compile_query(simple_sel)

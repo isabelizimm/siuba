@@ -32,7 +32,7 @@ def test_show_query_basic_simplify(df_tiny):
     q = df_tiny >> mutate(a = _.x.mean()) >> show_query(return_query = False, simplify=True)
 
     assert rename_source(str(q), df_tiny) == """\
-SELECT x, avg(x) OVER () AS a 
+SELECT *, avg(x) OVER () AS a 
 FROM SRC_TBL"""
 
 def test_show_query_complex_simplify(df_wide):
@@ -40,7 +40,7 @@ def test_show_query_complex_simplify(df_wide):
     res = q >> show_query(return_query = False, simplify=True)
 
     assert rename_source(str(res), df_wide) == """\
-SELECT x, y, z, a, avg(a) OVER () AS b 
+SELECT *, avg(a) OVER () AS b 
 FROM (SELECT *, avg(x) OVER () AS a 
 FROM SRC_TBL) AS anon_1"""
 
